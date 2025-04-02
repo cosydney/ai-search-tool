@@ -1,4 +1,4 @@
-# AI-Powered People Search Tool
+# Xam - AI-Powered People Search Tool
 
 A Node.js application that processes CSV files containing people data and uses AI agents to filter and match individuals based on their titles and descriptions.
 
