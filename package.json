@@ -4,7 +4,7 @@
     "description": "AI-powered person search system",
     "main": "agents/index.js",
     "scripts": {
-        "start": "node agents/index.js"
+        "start": "node personSearchAgents.js"
     },
     "dependencies": {
         "csv-parse": "^5.5.3",
