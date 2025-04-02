@@ -1,7 +1,3 @@
-const fs = require('fs');
-const csv = require('csv-parse');
-const { createObjectCsvWriter } = require('csv-writer');
-const { OpenAIStream, StreamingTextResponse } = require('ai');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -14,7 +10,6 @@ const openai = new OpenAI({
 // Default model setting
 const DEFAULT_MODEL = process.env.AI_MODEL || "gpt-4o-mini";
 
-// Agent 1: Title-based filtering
 class TitleFilterAgent {
     constructor() {
         this.positiveKeywords = [];
@@ -29,8 +24,10 @@ class TitleFilterAgent {
 Generate a list of job titles, keywords, or terms that should be INCLUDED in the search results.
 These are titles or terms that would indicate someone is SUITABLE for this role.
 
+Please use common job titles keywords that would help us find a good match within a list of people depending on their job title and job description.
+
 Return ONLY a comma-separated list of terms, with NO other text.
-Each term should be a single word or phrase.`;
+Each term should be a single word.`;
 
         try {
             const completion = await openai.completions.create({
@@ -190,143 +187,4 @@ Each term should be a single word or phrase.`;
     }
 }
 
-// Agent 2: Semantic Search Agent
-class SemanticSearchAgent {
-    async ratePerson(person, searchDescription) {
-        const prompt = `Rate how well this person matches the following description (0-100):
-        Person: ${person.name}, Title: ${person.title}, Experience: ${person.experience}
-        Search Description: ${searchDescription}
-        Provide only a number between 0-100.`;
-
-        try {
-            const completion = await openai.completions.create({
-                model: "gpt-3.5-turbo",
-                prompt: prompt,
-                max_tokens: 5,
-                temperature: 0.1
-            });
-
-            const rating = parseInt(completion.choices[0].text.trim());
-            return isNaN(rating) ? 0 : rating;
-        } catch (error) {
-            console.error('Error in semantic search:', error);
-            return 0;
-        }
-    }
-}
-
-// Agent 3: AI Match Verification
-class AIMatchVerificationAgent {
-    async verifyMatch(person, searchDescription) {
-        const prompt = `Verify if this person is a good match for the following description:
-        Person: ${person.name}, Title: ${person.title}, Experience: ${person.experience}
-        Search Description: ${searchDescription}
-        Respond with either "MATCH" or "NO_MATCH" only.`;
-
-        try {
-            const completion = await openai.completions.create({
-                model: DEFAULT_MODEL,
-                prompt: prompt,
-                max_tokens: 10,
-                temperature: 0.1
-            });
-
-            return completion.choices[0].text.trim() === "MATCH";
-        } catch (error) {
-            console.error('Error in AI verification:', error);
-            return false;
-        }
-    }
-}
-
-// Main search function
-async function searchPeople(inputFile, searchDescription, outputFile = []) {
-    const titleAgent = new TitleFilterAgent();
-    const semanticAgent = new SemanticSearchAgent();
-    const verificationAgent = new AIMatchVerificationAgent();
-
-    const people = [];
-
-    // Read input CSV
-    await new Promise((resolve, reject) => {
-        fs.createReadStream(inputFile)
-            .pipe(csv.parse({ columns: true, skip_empty_lines: true }))
-            .on('data', (data) => people.push(data))
-            .on('end', resolve)
-            .on('error', reject);
-    });
-
-    console.log(`Processing ${people.length} people...`);
-
-    // Initialize the title agent with the search description and people data
-    await titleAgent.initialize(searchDescription, people);
-
-    const results = [];
-
-    // Process each person through the agents
-    for (const person of people) {
-        // Agent 1: Title filtering
-        if (!titleAgent.filterByTitle(person)) {
-            continue;
-        }
-
-        // // Agent 2: Semantic search
-        // const rating = await semanticAgent.ratePerson(person, searchDescription);
-        // if (rating < 50) { // Adjust threshold as needed
-        //     continue;
-        // }
-
-        // // Agent 3: AI verification
-        // const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
-        // if (isMatch) {
-            results.push({
-                ...person,
-                // match_rating: rating
-            });
-        // }
-    }
-
-    // Create ordered header with specific columns first, then all others
-    const orderedHeader = [];
-    
-    // Add specific columns first if they exist in the data
-    const priorityColumns = ['name', 'title', 'match_rating'];
-    for (const column of priorityColumns) {
-        if (results.length > 0 && column in results[0]) {
-            orderedHeader.push({
-                id: column,
-                title: column.split(/(?=[A-Z])/).join(' ').replace(/^./, str => str.toUpperCase())
-            });
-        }
-    }
-
-    // Add all other columns
-    if (results.length > 0) {
-        const allKeys = Object.keys(results[0]);
-        const remainingKeys = allKeys.filter(key => !priorityColumns.includes(key));
-        
-        remainingKeys.forEach(key => {
-            orderedHeader.push({
-                id: key,
-                title: key.split(/(?=[A-Z])/).join(' ').replace(/^./, str => str.toUpperCase())
-            });
-        });
-    }
-
-    // Write results to CSV
-    const csvWriter = createObjectCsvWriter({
-        path: outputFile,
-        header: orderedHeader
-    });
-
-    await csvWriter.writeRecords(results);
-    console.log(`Search complete. Found ${results.length} matches. Results saved to ${outputFile}`);
-}
-
-// Example usage
-const inputFile = process.argv[2] || 'input.csv';
-const searchDescription = process.argv[3] || 'Looking for a person responsible for conversion optimization, (CRO, Conversion Optimization, UX, Digital Conversion, Marketing, Product) and join to team recently (up 6 month)';
-const outputFile = process.argv[4] || 'output.csv';``
-
-
-searchPeople(inputFile, searchDescription, outputFile).catch(console.error); 
+module.exports = TitleFilterAgent; 
