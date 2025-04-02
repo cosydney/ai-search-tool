@@ -1,15 +1,6 @@
-# Xam - AI-Powered People Search Tool
+# AI-Powered People Search Tool
 
 A Node.js application that processes CSV files containing people data and uses AI agents to filter and match individuals based on their titles and descriptions.
-
-## Features
-
-- CSV file processing for input and output
-- AI-powered title filtering
-- AI verification matching (currently commented out but available)
-- Configurable search criteria
-- Priority-based column ordering in output
-- Environment variable support via dotenv
 
 ## Prerequisites
 
@@ -75,14 +66,3 @@ OPENAI_API_KEY=your-api-key-here
 AI_API_BASE=https://api.openai.com/v1
 AI_MODEL=gpt-4o-mini
 ```
-
-## Error Handling
-
-The program includes basic error handling for:
-- File reading/writing operations
-- CSV parsing
-- Agent operations
-
-## License
-
-[Add your license information here] 
