@@ -17,72 +17,90 @@ class TitleFilterAgent {
         this.allTitles = new Set();
     }
 
-    async extractPositiveKeywords(searchDescription) {
-        const prompt = `Based on this job search description:
+    async extractKeywords(searchDescription) {
+        const prompt = `Analyze this job search description to identify title-related keywords for filtering candidates:
 "${searchDescription}"
 
-Generate a list of job titles, keywords, or terms that should be INCLUDED in the search results.
-These are titles or terms that would indicate someone is SUITABLE for this role.
+Please provide a structured response in the following JSON format:
+{
+    "positiveKeywords": {
+        "exactTerms": ["List of exact job titles that are highly relevant"],
+        "partialTerms": ["List of partial terms that should be included in job titles"],
+        "roleTypes": ["Types of roles that would be suitable"]
+    },
+    "negativeKeywords": {
+        "exactTerms": ["List of exact job titles that should be excluded"],
+        "partialTerms": ["List of partial terms in job titles that indicate unsuitability"],
+        "roleTypes": ["Types of roles that would be unsuitable"]
+    },
+    "skillKeywords": ["Key technical or professional skills to identify in titles"],
+    "seniorityLevels": {
+        "include": ["Seniority levels to include"],
+        "exclude": ["Seniority levels to exclude"]
+    }
+}
 
-Please use common job titles keywords that would help us find a good match within a list of people depending on their job title and job description.
-
-Return ONLY a comma-separated list of terms, with NO other text.
-Each term should be a single word.`;
+Focus on job title filtering rather than general job descriptions. Provide terms that would help filter a list of people based on their job titles.
+Return a valid JSON object and nothing else.`;
 
         try {
             const completion = await openai.completions.create({
                 model: DEFAULT_MODEL,
                 prompt: prompt,
-                max_tokens: 150,
+                max_tokens: 500,
                 temperature: 0.2
             });
 
             const rawResponse = completion.choices[0].text.trim();
-            const positiveKeywords = rawResponse
-                .split(',')
-                .map(k => k.trim().toLowerCase())
-                .filter(k => k.length > 0);
+            let parsedResponse;
+            
+            try {
+                parsedResponse = JSON.parse(rawResponse);
+            } catch (parseError) {
+                console.error('Error parsing JSON response:', parseError);
+                console.log('Raw response:', rawResponse);
+                // Fallback to simple keyword extraction if JSON parsing fails
+                const fallbackPositive = rawResponse.split(/\n|,/)
+                    .map(k => k.trim().toLowerCase())
+                    .filter(k => k.length > 0 && !k.startsWith('{') && !k.startsWith('}'));
+                return {
+                    positiveKeywords: fallbackPositive,
+                    negativeKeywords: [],
+                    rawResponse: null
+                };
+            }
+            
+            // Extract flat arrays for compatibility with existing code
+            const positiveKeywords = [
+                ...(parsedResponse.positiveKeywords?.exactTerms || []),
+                ...(parsedResponse.positiveKeywords?.partialTerms || []),
+                ...(parsedResponse.positiveKeywords?.roleTypes || []),
+                ...(parsedResponse.skillKeywords || []),
+                ...(parsedResponse.seniorityLevels?.include || [])
+            ].map(k => k.toLowerCase());
+            
+            const negativeKeywords = [
+                ...(parsedResponse.negativeKeywords?.exactTerms || []),
+                ...(parsedResponse.negativeKeywords?.partialTerms || []),
+                ...(parsedResponse.negativeKeywords?.roleTypes || []),
+                ...(parsedResponse.seniorityLevels?.exclude || [])
+            ].map(k => k.toLowerCase());
 
             console.log('AI generated positive keywords:', positiveKeywords);
-            return positiveKeywords;
-        } catch (error) {
-            console.error('Error generating positive keywords:', error);
-            return [];
-        }
-    }
-
-    async extractNegativeKeywords(searchDescription) {
-        const prompt = `Based on this job search description:
-"${searchDescription}"
-
-You are an agent responsible for filtering out people who are not a good fit from a prompt / job description.
-
-Your role is to think and generate a list of keywords that should be excluded from position titles.
-
-These should be titles or terms that would indicate someone is NOT suitable for this role.
-
-Return ONLY a comma-separated list of terms, with NO other text.
-Each term should be a single word or phrase.`;
-
-        try {
-            const completion = await openai.completions.create({
-                model: DEFAULT_MODEL,
-                prompt: prompt,
-                max_tokens: 150,
-                temperature: 0.2
-            });
-
-            const rawResponse = completion.choices[0].text.trim();
-            const negativeKeywords = rawResponse
-                .split(',')
-                .map(k => k.trim().toLowerCase())
-                .filter(k => k.length > 0);
-
             console.log('AI generated negative keywords:', negativeKeywords);
-            return negativeKeywords;
+            
+            return {
+                positiveKeywords,
+                negativeKeywords,
+                rawResponse: parsedResponse // Store the full structured response for potential future use
+            };
         } catch (error) {
-            console.error('Error generating negative keywords:', error);
-            return [];
+            console.error('Error generating keywords:', error);
+            return {
+                positiveKeywords: [],
+                negativeKeywords: [],
+                rawResponse: null
+            };
         }
     }
 
@@ -97,47 +115,37 @@ Each term should be a single word or phrase.`;
         console.log(`Found ${this.allTitles.size} unique titles in the CSV`);
     }
 
-    resolveKeywordConflicts() {
-        // If any negative keywords appear in positive keywords, remove them from negative
-        const conflicts = this.negativeKeywords.filter(
-            negKey => this.positiveKeywords.some(posKey => 
-                posKey.includes(negKey) || negKey.includes(posKey)
-            )
-        );
-        
-        if (conflicts.length > 0) {
-            console.log('Found keyword conflicts (positive takes precedence):', conflicts);
-            
-            // Remove conflicting keywords from negative list
-            this.negativeKeywords = this.negativeKeywords.filter(
-                negKey => !this.positiveKeywords.some(posKey => 
-                    posKey.includes(negKey) || negKey.includes(posKey)
-                )
-            );
-        }
-    }
-
     async initialize(searchDescription, people, providedNegativeKeywords = []) {
         // Extract titles from CSV data
         await this.extractTitlesFromCSV(people);
         
-        // Extract positive and negative keywords
-        const [positiveKeywords, aiNegativeKeywords] = await Promise.all([
-            this.extractPositiveKeywords(searchDescription),
-            this.extractNegativeKeywords(searchDescription)
-        ]);
+        const keywordsResult = await this.extractKeywords(searchDescription);
         
-        // Use provided negative keywords if available, otherwise use AI generated ones
-        this.positiveKeywords = positiveKeywords;
+        // Handle role types as compound keywords
+        const roleTypes = keywordsResult.rawResponse?.positiveKeywords?.roleTypes || [];
+        const otherKeywords = [
+            ...(keywordsResult.rawResponse?.positiveKeywords?.exactTerms || []),
+            ...(keywordsResult.rawResponse?.positiveKeywords?.partialTerms || []),
+            ...(keywordsResult.rawResponse?.skillKeywords || []),
+            ...(keywordsResult.rawResponse?.seniorityLevels?.include || [])
+        ];
+
+        // Create compound keywords by combining role types with other keywords
+        const compoundKeywords = roleTypes.flatMap(roleType => 
+            otherKeywords.map(keyword => `${roleType} ${keyword}`)
+        );
+
+        this.positiveKeywords = [
+            ...otherKeywords,
+            ...compoundKeywords
+        ].map(k => k.toLowerCase());
+
         this.negativeKeywords = providedNegativeKeywords.length > 0 
             ? providedNegativeKeywords.map(k => k.toLowerCase())
-            : aiNegativeKeywords;
-            
-        // Resolve any conflicts between positive and negative keywords
-        this.resolveKeywordConflicts();
+            : keywordsResult.negativeKeywords;
         
-        console.log('Final positive keywords:', this.positiveKeywords);
-        console.log('Final negative keywords:', this.negativeKeywords);
+        console.log('positive keywords:', this.positiveKeywords);
+        console.log('negative keywords:', this.negativeKeywords);
     }
 
     matchTitle(title) {
