@@ -4,7 +4,7 @@ require('dotenv').config();
 // Initialize AI configuration
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.AI_API_BASE || 'https://api.openai.com/v1',
+    baseURL: 'https://api.openai.com/v1',
 });
 
 // Default model setting
