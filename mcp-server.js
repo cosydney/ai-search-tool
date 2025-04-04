@@ -6,8 +6,12 @@ const { createObjectCsvWriter } = require('csv-writer');
 const { TitleFilterAgent, AIMatchVerificationAgent } = require('./agents');
 require('dotenv').config();
 
+// Environment variables
 const PORT = process.env.PORT || 3000;
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
+const AI_API_KEY = process.env.OPENAI_API_KEY;
+const AI_API_BASE = process.env.AI_API_BASE || 'https://api.openai.com/v1';
+const AI_MODEL = process.env.AI_MODEL || 'gpt-3.5-turbo-instruct';
 
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -96,59 +100,44 @@ async function searchPeople(inputFile, searchDescription, outputFile) {
   };
 }
 
-// MCP Server implementation
+// Create server
 const server = http.createServer(async (req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
+    res.writeHead(204);
     res.end();
     return;
   }
-  
-  // Only accept POST requests to /mcp endpoint
-  if (req.method !== 'POST' || req.url !== '/mcp') {
-    res.statusCode = 404;
-    res.end(JSON.stringify({ error: 'Not found' }));
-    return;
-  }
-  
-  try {
-    // Parse request body
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
-    
-    await new Promise((resolve) => {
-      req.on('end', resolve);
-    });
-    
-    const request = JSON.parse(body);
-    
-    // Handle MCP request
-    if (request.apiVersion !== '1.0') {
-      throw new Error(`Unsupported API version: ${request.apiVersion}`);
+
+  // Only handle POST requests to /mcp
+  if (req.method === 'POST' && req.url === '/mcp') {
+    try {
+      // Parse request body
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+
+      // Handle MCP request
+      const response = await handleMCPRequest(body);
+
+      // Send response
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (error) {
+      console.error('Error handling request:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: error.message }));
     }
-    
-    // Process request
-    const response = await handleMCPRequest(request);
-    
-    // Send response
-    res.setHeader('Content-Type', 'application/json');
-    res.statusCode = 200;
-    res.end(JSON.stringify(response));
-    
-  } catch (error) {
-    console.error('Error processing request:', error);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ 
-      error: error.message || 'Internal server error',
-      apiVersion: '1.0'
-    }));
+  } else {
+    res.writeHead(404);
+    res.end();
   }
 });
 
@@ -330,8 +319,13 @@ async function handleMCPRequest(request) {
   return response;
 }
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`MCP Server running on http://localhost:${PORT}/mcp`);
-  console.log(`Set MCP_SERVER_URL=http://localhost:${PORT}/mcp in your client configuration`);
-}); 
+// Export for Vercel
+module.exports = server;
+
+// Only start server if not in Vercel environment
+if (process.env.NODE_ENV !== 'production') {
+  server.listen(PORT, () => {
+    console.log(`MCP Server running on http://localhost:${PORT}/mcp`);
+    console.log(`Set MCP_SERVER_URL=http://localhost:${PORT}/mcp in your client configuration`);
+  });
+} 
