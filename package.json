@@ -1,15 +1,19 @@
 {
-    "name": "xam",
+    "name": "xam-mcp-server",
     "version": "1.0.0",
-    "description": "AI-powered person search system",
-    "main": "agents/index.js",
+    "description": "AI-powered CSV filtering MCP server for people search",
+    "main": "mcp-server.js",
     "scripts": {
-        "start": "node index.js"
+        "start": "node index.js",
+        "serve": "node mcp-server.js",
+        "test": "node test-mcp-client.js",
+        "start:mcp": "node mcp-server.js"
     },
     "dependencies": {
         "csv-parse": "^5.5.3",
         "csv-writer": "^1.6.0",
         "dotenv": "^16.4.1",
+        "node-fetch": "^2.6.9",
         "openai": "^4.28.0"
     }
 }
