@@ -4,30 +4,27 @@ const http = require('http');
 const csv = require('csv-parse');
 const { createObjectCsvWriter } = require('csv-writer');
 const { TitleFilterAgent, AIMatchVerificationAgent } = require('./agents');
+const storage = require('./services/storage');
 require('dotenv').config();
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
 const AI_API_KEY = process.env.OPENAI_API_KEY;
 const AI_API_BASE = process.env.AI_API_BASE || 'https://api.openai.com/v1';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-3.5-turbo-instruct';
 
-// Ensure uploads directory exists
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
-// Main search function (from index.js with modifications)
-async function searchPeople(inputFile, searchDescription, outputFile) {
+// Main search function
+async function searchPeople(inputFileKey, searchDescription, outputFileName) {
   const titleAgent = new TitleFilterAgent();
   const verificationAgent = new AIMatchVerificationAgent();
 
   const people = [];
 
-  // Read input CSV
+  // Read input CSV from S3
+  const inputStream = await storage.downloadFile(inputFileKey);
+  
   await new Promise((resolve, reject) => {
-    fs.createReadStream(inputFile)
+    inputStream
       .pipe(csv.parse({ columns: true, skip_empty_lines: true }))
       .on('data', (data) => people.push(data))
       .on('end', resolve)
@@ -48,12 +45,12 @@ async function searchPeople(inputFile, searchDescription, outputFile) {
       continue;
     }
 
-    // Agent 2: AI verification (commented out for performance)
+    // Agent 2: AI verification
     const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
     if (isMatch) {
-    results.push({
-      ...person,
-    });
+      results.push({
+        ...person,
+      });
     }
   }
 
@@ -84,18 +81,28 @@ async function searchPeople(inputFile, searchDescription, outputFile) {
     });
   }
 
-  // Write results to CSV
+  // Create CSV content in memory
   const csvWriter = createObjectCsvWriter({
-    path: outputFile,
+    path: '/tmp/' + outputFileName,
     header: orderedHeader
   });
 
   await csvWriter.writeRecords(results);
-  console.log(`Search complete. Found ${results.length} matches. Results saved to ${outputFile}`);
+  
+  // Upload results to S3
+  const outputFileKey = await storage.uploadFile(
+    fs.readFileSync('/tmp/' + outputFileName),
+    outputFileName
+  );
+
+  // Clean up temporary file
+  fs.unlinkSync('/tmp/' + outputFileName);
+
+  console.log(`Search complete. Found ${results.length} matches. Results saved to S3: ${outputFileKey}`);
   
   return {
     matchCount: results.length,
-    outputPath: outputFile,
+    outputFileKey: outputFileKey,
     results: results.slice(0, 10) // Return first 10 results for preview
   };
 }
@@ -174,9 +181,9 @@ async function handleMCPRequest(request) {
         returns: {
           type: 'object',
           properties: {
-            file_path: {
+            file_key: {
               type: 'string',
-              description: 'Path to the uploaded CSV file'
+              description: 'S3 key of the uploaded CSV file'
             },
             row_count: {
               type: 'number',
@@ -191,21 +198,21 @@ async function handleMCPRequest(request) {
         parameters: {
           type: 'object',
           properties: {
-            input_file: {
+            input_file_key: {
               type: 'string',
-              description: 'Path to the input CSV file'
+              description: 'S3 key of the input CSV file'
             },
             search_description: {
               type: 'string',
               description: 'Description of the person(s) you are looking for'
             },
-            output_file: {
+            output_file_name: {
               type: 'string',
-              description: 'Path for the output CSV file',
+              description: 'Name for the output CSV file',
               default: 'filtered_output.csv'
             }
           },
-          required: ['input_file', 'search_description']
+          required: ['input_file_key', 'search_description']
         },
         returns: {
           type: 'object',
@@ -214,9 +221,9 @@ async function handleMCPRequest(request) {
               type: 'number',
               description: 'Number of matching people found'
             },
-            outputPath: {
+            outputFileKey: {
               type: 'string',
-              description: 'Path to the output CSV file'
+              description: 'S3 key of the output CSV file'
             },
             results: {
               type: 'array',
@@ -262,16 +269,16 @@ async function handleMCPRequest(request) {
     
     // Decode base64 content
     const fileBuffer = Buffer.from(file_content, 'base64');
-    const filePath = path.join(UPLOADS_DIR, file_name);
     
-    // Write file to disk
-    fs.writeFileSync(filePath, fileBuffer);
+    // Upload to S3
+    const fileKey = await storage.uploadFile(fileBuffer, file_name);
     
     // Parse CSV to count rows
     const parser = csv.parse({ columns: true, skip_empty_lines: true });
     let rowCount = 0;
     
-    fs.createReadStream(filePath)
+    const inputStream = await storage.downloadFile(fileKey);
+    inputStream
       .pipe(parser)
       .on('data', () => rowCount++);
     
@@ -281,25 +288,20 @@ async function handleMCPRequest(request) {
     });
     
     response.result = {
-      file_path: filePath,
+      file_key: fileKey,
       row_count: rowCount
     };
   } 
   // Tool implementation: filter_people
   else if (tool === 'filter_people') {
-    const { input_file, search_description, output_file = 'filtered_output.csv' } = parameters;
+    const { input_file_key, search_description, output_file_name = 'filtered_output.csv' } = parameters;
     
-    if (!input_file || !search_description) {
-      throw new Error('Missing required parameters: input_file and search_description are required');
+    if (!input_file_key || !search_description) {
+      throw new Error('Missing required parameters: input_file_key and search_description are required');
     }
     
-    // Generate a unique output file path if not provided
-    const outputPath = output_file.startsWith('/') 
-      ? output_file 
-      : path.join(UPLOADS_DIR, output_file);
-    
     // Execute search
-    const result = await searchPeople(input_file, search_description, outputPath);
+    const result = await searchPeople(input_file_key, search_description, output_file_name);
     
     response.result = result;
   } 

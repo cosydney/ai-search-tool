@@ -10,7 +10,9 @@
     "dependencies": {
         "csv-parse": "^5.5.3",
         "csv-writer": "^1.6.0",
-        "dotenv": "^16.4.1"
+        "dotenv": "^16.4.1",
+        "@aws-sdk/client-s3": "^3.511.0",
+        "@aws-sdk/s3-request-presigner": "^3.511.0"
     },
     "devDependencies": {
         "nodemon": "^3.0.3"
