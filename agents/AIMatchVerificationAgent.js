@@ -10,6 +10,7 @@ const openai = new OpenAI({
 // Default model setting
 const DEFAULT_MODEL = process.env.AI_MODEL || "gpt-4o-mini";
 
+
 class AIMatchVerificationAgent {
     async verifyMatch(person, searchDescription) {
         const prompt = `Verify if this person is a good match for the following description:

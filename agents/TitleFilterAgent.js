@@ -44,14 +44,19 @@ Focus on job title filtering rather than general job descriptions. Provide terms
 Return a valid JSON object and nothing else.`;
 
         try {
-            const completion = await openai.completions.create({
+            const completion = await openai.chat.completions.create({
                 model: DEFAULT_MODEL,
-                prompt: prompt,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
                 max_tokens: 500,
                 temperature: 0.2
             });
 
-            const rawResponse = completion.choices[0].text.trim();
+            const rawResponse = completion.choices[0].message.content.trim();
             let parsedResponse;
             
             try {
