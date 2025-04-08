@@ -36,12 +36,12 @@ async function searchPeople(inputFile, searchDescription, outputFile = []) {
         }
 
         // Agent 2: AI verification
-        // const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
-        // if (isMatch) {
+        const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
+        if (isMatch) {
             results.push({
                 ...person,
             });
-        // }
+        }
     }
 
     // Create ordered header with specific columns first, then all others
