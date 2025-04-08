@@ -42,14 +42,15 @@ async function searchPeople(inputFileKey, searchDescription, outputFileName) {
       continue;
     }
 
-    // TODO SYD
     // Agent 2: AI verification
-    // const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
-    // if (isMatch) {
+    
+    // TODO SYDNEY: Uncomment this
+    const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
+    if (isMatch) {
       results.push({
         ...person,
       });
-    // }
+    }
   }
 
   // Create ordered header with specific columns first, then all others
