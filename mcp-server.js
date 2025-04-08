@@ -36,22 +36,29 @@ async function searchPeople(inputFileKey, searchDescription, outputFileName) {
   const results = [];
 
   // Process each person through the agents
+  const verificationPromises = [];
+  
   for (const person of people) {
     // Agent 1: Title filtering
     if (!titleAgent.filterByTitle(person)) {
       continue;
     }
 
-    // Agent 2: AI verification
-    
-    // TODO SYDNEY: Uncomment this
-    const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
-    if (isMatch) {
-      results.push({
-        ...person,
-      });
-    }
+    // Agent 2: AI verification - add to promises array instead of awaiting
+    verificationPromises.push(
+      verificationAgent.verifyMatch(person, searchDescription)
+        .then(isMatch => {
+          if (isMatch) {
+            results.push({
+              ...person,
+            });
+          }
+        })
+    );
   }
+
+  // Wait for all verifications to complete
+  await Promise.all(verificationPromises);
 
   // Create ordered header with specific columns first, then all others
   const orderedHeader = [];
