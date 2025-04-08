@@ -58,25 +58,27 @@ async function testMCPServer() {
       console.log(`- ${tool.name}: ${tool.description}`);
     });
     
-    // Step 3: Upload CSV file
-    console.log(`\n📤 Uploading CSV file: ${CSV_FILE_PATH}...`);
-    const fileContent = fs.readFileSync(CSV_FILE_PATH, { encoding: 'base64' });
-    const fileName = path.basename(CSV_FILE_PATH);
+    // ************ TODO UNCOMMENT THIS ************
+    // // Step 3: Upload CSV file
+    // console.log(`\n📤 Uploading CSV file: ${CSV_FILE_PATH}...`);
+    // const fileContent = fs.readFileSync(CSV_FILE_PATH, { encoding: 'base64' });
+    // const fileName = path.basename(CSV_FILE_PATH);
     
-    const uploadResult = await callMCP('upload_csv', {
-      file_content: fileContent,
-      file_name: fileName
-    });
+    // const uploadResult = await callMCP('upload_csv', {
+    //   file_content: fileContent,
+    //   file_name: fileName
+    // });
     
-    console.log(`\n✅ CSV file uploaded successfully!`);
-    console.log(`File path: ${uploadResult.result.file_path}`);
-    console.log(`Row count: ${uploadResult.result.row_count}`);
-    
+    // console.log(`\n✅ CSV file uploaded successfully!`);
+    // console.log(`File path: ${uploadResult.result.file_key}`);
+    // console.log(`Row count: ${uploadResult.result.row_count}`);
+    // ************ TODO UNCOMMENT THIS ************
+
     // Step 4: Filter people based on search description
     console.log(`\n🔎 Filtering people with description: "${SEARCH_DESCRIPTION}"...`);
-    
+
     const filterResult = await callMCP('filter_people', {
-      input_file: uploadResult.result.file_path,
+      input_file_key: "uploads/1744087566946-input.csv" || uploadResult.result.file_key,
       search_description: SEARCH_DESCRIPTION,
       output_file: 'test_output.csv'
     });

@@ -4,7 +4,7 @@ require('dotenv').config();
 // Initialize AI configuration
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    baseURL: 'https://api.openai.com/v1',
+    baseURL: process.env.AI_API_BASE || 'https://api.openai.com/v1',
 });
 
 // Default model setting
@@ -19,14 +19,17 @@ class AIMatchVerificationAgent {
         Respond with either "MATCH" or "NO_MATCH" only.`;
 
         try {
-            const completion = await openai.completions.create({
+            const completion = await openai.chat.completions.create({
                 model: DEFAULT_MODEL,
-                prompt: prompt,
+                messages: [
+                    { role: "system", content: "You are a verification agent that determines if a person matches a search description. Respond with either 'MATCH' or 'NO_MATCH' only." },
+                    { role: "user", content: prompt }
+                ],
                 max_tokens: 10,
                 temperature: 0.1
             });
 
-            const response = completion.choices[0].text.trim();
+            const response = completion.choices[0].message.content.trim();
             
             // Validate response
             if (response !== "MATCH" && response !== "NO_MATCH") {

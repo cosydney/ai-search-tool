@@ -9,9 +9,6 @@ require('dotenv').config();
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
-const AI_API_KEY = process.env.OPENAI_API_KEY;
-const AI_API_BASE = process.env.AI_API_BASE || 'https://api.openai.com/v1';
-const AI_MODEL = process.env.AI_MODEL || 'gpt-3.5-turbo-instruct';
 
 // Main search function
 async function searchPeople(inputFileKey, searchDescription, outputFileName) {
@@ -45,13 +42,14 @@ async function searchPeople(inputFileKey, searchDescription, outputFileName) {
       continue;
     }
 
+    // TODO SYD
     // Agent 2: AI verification
-    const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
-    if (isMatch) {
+    // const isMatch = await verificationAgent.verifyMatch(person, searchDescription);
+    // if (isMatch) {
       results.push({
         ...person,
       });
-    }
+    // }
   }
 
   // Create ordered header with specific columns first, then all others
@@ -98,11 +96,14 @@ async function searchPeople(inputFileKey, searchDescription, outputFileName) {
   // Clean up temporary file
   fs.unlinkSync('/tmp/' + outputFileName);
 
-  console.log(`Search complete. Found ${results.length} matches. Results saved to S3: ${outputFileKey}`);
+  // Get the public URL for the uploaded file
+  const fileUrl = await storage.getFileUrl(outputFileKey);
+  console.log(`Search complete. Found ${results.length} matches. Results saved to S3: ${fileUrl}`);
   
   return {
     matchCount: results.length,
     outputFileKey: outputFileKey,
+    fileUrl: fileUrl,
     results: results.slice(0, 10) // Return first 10 results for preview
   };
 }
@@ -271,7 +272,7 @@ async function handleMCPRequest(request) {
     const fileBuffer = Buffer.from(file_content, 'base64');
     
     // Upload to S3
-    const fileKey = await storage.uploadFile(fileBuffer, file_name);
+    const fileKey = await storage.uploadFile(fileBuffer, file_name, true); // Set public access to true
     
     // Parse CSV to count rows
     const parser = csv.parse({ columns: true, skip_empty_lines: true });
@@ -329,5 +330,9 @@ if (process.env.NODE_ENV !== 'production') {
   server.listen(PORT, () => {
     console.log(`MCP Server running on http://localhost:${PORT}/mcp`);
     console.log(`Set MCP_SERVER_URL=http://localhost:${PORT}/mcp in your client configuration`);
+    console.log('Current environment variables:');
+    console.log("baseURL", process.env.baseURL);
+    console.log("AI_MODEL", process.env.AI_MODEL);
+    console.log("OPENAI_API_KEY", process.env.OPENAI_API_KEY?.replace(/./g, '*'));
   });
 } 

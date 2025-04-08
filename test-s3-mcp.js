@@ -39,7 +39,7 @@ const filterRequest = {
 
 // Function to make MCP requests
 async function makeMCPRequest(request) {
-  const response = await fetch('https://xam-self.vercel.app/mcp', {
+  const response = await fetch('http://localhost:3000/mcp', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

@@ -15,6 +15,19 @@ class TitleFilterAgent {
         this.positiveKeywords = [];
         this.negativeKeywords = [];
         this.allTitles = new Set();
+        // Add structured keyword categorization
+        this.keywordsStructure = {
+            roles: [],
+            seniority: {
+                include: [],
+                exclude: []
+            },
+            skills: [],
+            exactTitles: {
+                include: [],
+                exclude: []
+            }
+        };
     }
 
     async extractKeywords(searchDescription) {
@@ -126,31 +139,37 @@ Return a valid JSON object and nothing else.`;
         
         const keywordsResult = await this.extractKeywords(searchDescription);
         
-        // Handle role types as compound keywords
-        const roleTypes = keywordsResult.rawResponse?.positiveKeywords?.roleTypes || [];
-        const otherKeywords = [
-            ...(keywordsResult.rawResponse?.positiveKeywords?.exactTerms || []),
-            ...(keywordsResult.rawResponse?.positiveKeywords?.partialTerms || []),
-            ...(keywordsResult.rawResponse?.skillKeywords || []),
-            ...(keywordsResult.rawResponse?.seniorityLevels?.include || [])
-        ];
-
-        // Create compound keywords by combining role types with other keywords
-        const compoundKeywords = roleTypes.flatMap(roleType => 
-            otherKeywords.map(keyword => `${roleType} ${keyword}`)
-        );
-
-        this.positiveKeywords = [
-            ...otherKeywords,
-            ...compoundKeywords
-        ].map(k => k.toLowerCase());
-
+        // Keep backwards compatibility
+        this.positiveKeywords = keywordsResult.positiveKeywords;
         this.negativeKeywords = providedNegativeKeywords.length > 0 
             ? providedNegativeKeywords.map(k => k.toLowerCase())
             : keywordsResult.negativeKeywords;
         
-        console.log('positive keywords:', this.positiveKeywords);
-        console.log('negative keywords:', this.negativeKeywords);
+        // Set up structured keyword categories
+        if (keywordsResult.rawResponse) {
+            const response = keywordsResult.rawResponse;
+            
+            this.keywordsStructure = {
+                roles: [
+                    ...(response.positiveKeywords?.roleTypes || []).map(k => k.toLowerCase()),
+                ],
+                seniority: {
+                    include: (response.seniorityLevels?.include || []).map(k => k.toLowerCase()),
+                    exclude: (response.seniorityLevels?.exclude || []).map(k => k.toLowerCase())
+                },
+                skills: (response.skillKeywords || []).map(k => k.toLowerCase()),
+                exactTitles: {
+                    include: (response.positiveKeywords?.exactTerms || []).map(k => k.toLowerCase()),
+                    exclude: (response.negativeKeywords?.exactTerms || []).map(k => k.toLowerCase())
+                },
+                partialTerms: {
+                    include: (response.positiveKeywords?.partialTerms || []).map(k => k.toLowerCase()),
+                    exclude: (response.negativeKeywords?.partialTerms || []).map(k => k.toLowerCase())
+                }
+            };
+            
+            console.log('Structured keywords:', JSON.stringify(this.keywordsStructure, null, 2));
+        }
     }
 
     matchTitle(title) {
@@ -159,7 +178,7 @@ Return a valid JSON object and nothing else.`;
         const lowerTitle = title.toLowerCase();
         const titleWords = lowerTitle.split(/\s+/);
         
-        // Check for negative keywords first (exclusion)
+        // Legacy negative keyword checking for backward compatibility
         for (const negativeKeyword of this.negativeKeywords) {
             if (lowerTitle.includes(negativeKeyword)) {
                 console.log(`Title excluded by negative keyword: "${title}" contains "${negativeKeyword}"`);
@@ -167,31 +186,57 @@ Return a valid JSON object and nothing else.`;
             }
         }
         
-        // Check for positive keywords (inclusion)
-        for (const positiveKeyword of this.positiveKeywords) {
-            // Exact match
-            if (lowerTitle.includes(positiveKeyword)) {
-                console.log(`Title matched by positive keyword: "${title}" contains "${positiveKeyword}"`);
-                return true;
-            }
-            
-            // Word-by-word partial matching
-            const keywordWords = positiveKeyword.split(/\s+/);
-            
-            // Check if most of the keyword words appear in the title
-            // (useful for multi-word keywords)
-            const matchCount = keywordWords.filter(kw => 
-                titleWords.some(tw => tw.includes(kw) || kw.includes(tw))
-            ).length;
-            
-            if (keywordWords.length > 1 && matchCount >= Math.ceil(keywordWords.length * 0.75)) {
-                console.log(`Title matched by partial positive keyword: "${title}" matches parts of "${positiveKeyword}"`);
-                return true;
-            }
+        // Check for explicit exclusions from structured keywords
+        if (this.keywordsStructure.exactTitles.exclude.some(term => lowerTitle === term)) {
+            console.log(`Title exactly matches excluded title: "${title}"`);
+            return false;
         }
         
-        // No match found
-        return false;
+        if (this.keywordsStructure.partialTerms.exclude.some(term => lowerTitle.includes(term))) {
+            console.log(`Title contains excluded term: "${title}" contains "${term}"`);
+            return false;
+        }
+        
+        if (this.keywordsStructure.seniority.exclude.some(level => lowerTitle.includes(level))) {
+            console.log(`Title contains excluded seniority level: "${title}"`);
+            return false;
+        }
+        
+        // Two-layer filtering: first check for role match, then for seniority (if specified)
+        
+        // 1. Check if the title exactly matches any positive exact title
+        if (this.keywordsStructure.exactTitles.include.some(term => lowerTitle === term)) {
+            console.log(`Title exactly matches included title: "${title}"`);
+            return true;
+        }
+        
+        // 2. Check for role match
+        // not in use
+        const hasRoleMatch = this.keywordsStructure.roles.length === 0 || 
+            this.keywordsStructure.roles.some(role => lowerTitle.includes(role));
+        
+        // 3. Check for skill match
+        const hasSkillMatch = this.keywordsStructure.skills.length === 0 || 
+            this.keywordsStructure.skills.some(skill => lowerTitle.includes(skill));
+        
+        // 4. Check for seniority match (if specified)
+        // not in use
+        const hasSeniorityMatch = this.keywordsStructure.seniority.include.length === 0 || 
+            this.keywordsStructure.seniority.include.some(level => lowerTitle.includes(level));
+        
+        // 5. Check for partial terms
+        const hasPartialTermMatch = this.keywordsStructure.partialTerms.include.length === 0 || 
+            this.keywordsStructure.partialTerms.include.some(term => lowerTitle.includes(term));
+        
+        // Title passes if it matches the skill or partial terms
+        const matches = hasSkillMatch || hasPartialTermMatch;
+        
+        if (matches) {
+            console.log(`Title matched by structured criteria: "${title}"`);
+            console.log(`  Role match: ${hasSkillMatch}, Term match: ${hasPartialTermMatch}`);
+        }
+        
+        return matches;
     }
 
     filterByTitle(person) {
